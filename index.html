@@ -626,59 +626,53 @@ function cargarStockDesdeSheets() {
   var callbackName = 'gsCallback_' + Date.now();
   var script = document.createElement('script');
   var timeout = setTimeout(function(){
-    // Si tarda más de 8 segundos, usar datos locales
+    // Si tarda más de 15 segundos, usar datos locales
     delete window[callbackName];
-    document.body.removeChild(script);
+    try { document.body.removeChild(script); } catch(e){}
     setSyncStatus('', 'Usando datos locales');
     render();
-  }, 8000);
+  }, 15000);
 
-  // Intentar primero con Netlify Function (funciona en todos los dispositivos)
-  fetch('/.netlify/functions/getStock')
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      clearTimeout(timeout);
-      if(data.status === 'ok' && data.stock) {
-        Object.keys(data.stock).forEach(function(nombre){
-          if(state.stock.hasOwnProperty(nombre)){
-            state.stock[nombre] = parseInt(data.stock[nombre]) || 0;
-          }
-        });
-        saveState();
-        var info = data.ultimoRegistro;
-        var msg = info ? ('Último: '+info.servicio+' · '+info.dia) : 'Stock cargado';
-        setSyncStatus('ok', msg);
-        showToast('✓ Stock cargado desde Sheets');
-      } else {
-        setSyncStatus('', 'Sin registros previos');
-      }
-      render();
-    })
-    .catch(function(){
-      // Fallback: JSONP
-      window[callbackName] = function(data) {
-        clearTimeout(timeout);
-        delete window[callbackName];
-        try { document.body.removeChild(script); } catch(e){}
-        if(data.status === 'ok' && data.stock) {
-          Object.keys(data.stock).forEach(function(nombre){
-            if(state.stock.hasOwnProperty(nombre)){
-              state.stock[nombre] = parseInt(data.stock[nombre]) || 0;
-            }
-          });
-          saveState();
-          var info = data.ultimoRegistro;
-          var msg = info ? ('Último: '+info.servicio+' · '+info.dia) : 'Stock cargado';
-          setSyncStatus('ok', msg);
-          showToast('✓ Stock cargado desde Sheets');
-        } else {
-          setSyncStatus('', 'Sin registros previos');
+  function procesarStock(data) {
+    clearTimeout(timeout);
+    if(data.status === 'ok' && data.stock) {
+      Object.keys(data.stock).forEach(function(nombre){
+        if(state.stock.hasOwnProperty(nombre)){
+          state.stock[nombre] = parseInt(data.stock[nombre]) || 0;
         }
+      });
+      saveState();
+      var info = data.ultimoRegistro;
+      var msg = info ? ('Último: '+info.servicio+' · '+info.dia) : 'Stock cargado';
+      setSyncStatus('ok', msg);
+      showToast('✓ Stock cargado desde Sheets');
+    } else {
+      setSyncStatus('', 'Sin registros previos');
+    }
+    render();
+  }
+
+  window[callbackName] = function(data) {
+    delete window[callbackName];
+    try { document.body.removeChild(script); } catch(e){}
+    procesarStock(data);
+  };
+
+  // Intentar JSONP
+  script.src = APPS_SCRIPT_URL + '?action=getStock&callback=' + callbackName;
+  script.onerror = function() {
+    clearTimeout(timeout);
+    delete window[callbackName];
+    // Fallback: fetch directo
+    fetch(APPS_SCRIPT_URL + '?action=getStock')
+      .then(function(r){ return r.json(); })
+      .then(procesarStock)
+      .catch(function(){
+        setSyncStatus('', 'Usando datos locales');
         render();
-      };
-      script.src = APPS_SCRIPT_URL + '?action=getStock&callback=' + callbackName;
-      document.body.appendChild(script);
-    });
+      });
+  };
+  document.body.appendChild(script);
 }
 </script>
 </body>
