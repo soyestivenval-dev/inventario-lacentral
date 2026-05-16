@@ -201,6 +201,38 @@ document.getElementById('responsable').addEventListener('change',function(){
   document.getElementById('otro-nombre').style.display = this.value==='Otro'?'block':'none';
 });
 
+// Auto-detectar día al cambiar fecha
+document.getElementById('fecha-servicio').addEventListener('change', function(){
+  var f = this.value;
+  if(!f) return;
+  var d = new Date(f + 'T12:00:00');
+  var dow = d.getDay(); // 0=dom,1=lun,...,3=mie,...,6=sab
+  if(dow === 3) {
+    setDay('mie');
+    showToast('📅 Miércoles detectado — 2 servicios');
+  } else if(dow === 0) {
+    setDay('dom');
+    showToast('📅 Domingo detectado — 3 servicios');
+  } else {
+    // No es miércoles ni domingo, limpiar selección
+    currentDay = null;
+    document.getElementById('btn-mie').classList.remove('active');
+    document.getElementById('btn-dom').classList.remove('active');
+    render();
+    showToast('⚠️ Este día no tiene servicios programados');
+  }
+});
+
+// También detectar al cargar si ya hay fecha
+(function(){
+  var f = document.getElementById('fecha-servicio').value;
+  if(!f) return;
+  var d = new Date(f + 'T12:00:00');
+  var dow = d.getDay();
+  if(dow === 3) setDay('mie');
+  else if(dow === 0) setDay('dom');
+})();
+
 function getResponsable(){
   var s=document.getElementById('responsable').value;
   return s==='Otro'?(document.getElementById('nombre-otro').value||'Otro'):s;
@@ -410,30 +442,68 @@ function render(){
       stockInicial[p.name]=stockAhora+totalEnt-totalIng+totalNov;
     });
 
+    var todosCerrados=dayData2.filter(function(d){ return d&&d.cerrado; }).length===numSvc;
+
+    // Calcular nuevo stock total del día (ingresos del svc1)
+    var nuevoStock={};
+    PRODUCTS.forEach(function(p){
+      if(p.type==='cafe') return;
+      nuevoStock[p.name] = dayData2[0]&&dayData2[0].cerrado ? (dayData2[0].ingresos[p.name]||0) : 0;
+    });
+
+    // Personas por servicio = sobres entregados
+    var personasPorSvc=[];
+    dayInfo.services.forEach(function(s,i){
+      if(dayData2[i]&&dayData2[i].cerrado){
+        personasPorSvc.push(dayData2[i].entregados['Sobre']||0);
+      }
+    });
+    var totalPersonas = personasPorSvc.reduce(function(a,b){ return a+b; },0);
+
     html+='<div class="card"><div class="card-title">Resumen del día</div>';
+
+    // Tarjetas de personas por servicio
+    html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem;">';
+    dayInfo.services.forEach(function(s,i){
+      if(dayData2[i]&&dayData2[i].cerrado){
+        var p=dayData2[i].entregados['Sobre']||0;
+        html+='<div style="flex:1;min-width:80px;background:var(--accent-light);border-radius:var(--radius-sm);padding:8px 10px;text-align:center;">';
+        html+='<div style="font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">'+s+'</div>';
+        html+='<div style="font-size:22px;font-weight:600;color:var(--accent);font-family:var(--mono);">'+p+'</div>';
+        html+='<div style="font-size:10px;color:var(--text3);">personas</div>';
+        html+='</div>';
+      }
+    });
+    if(todosCerrados && personasPorSvc.length > 1){
+      html+='<div style="flex:1;min-width:80px;background:var(--success-light);border-radius:var(--radius-sm);padding:8px 10px;text-align:center;">';
+      html+='<div style="font-size:10px;font-weight:600;color:var(--success);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Total</div>';
+      html+='<div style="font-size:22px;font-weight:600;color:var(--success);font-family:var(--mono);">'+totalPersonas+'</div>';
+      html+='<div style="font-size:10px;color:var(--text3);">personas</div>';
+      html+='</div>';
+    }
+    html+='</div>';
+
     html+='<div style="overflow-x:auto;">';
-    html+='<table class="prod-table"><thead><tr><th>Producto</th><th>Stock inicial</th>';
+    html+='<table class="prod-table"><thead><tr><th>Producto</th><th>Ini</th><th style="color:var(--success)">+Nuevo</th>';
     dayInfo.services.forEach(function(s,i){
       if(dayData2[i]&&dayData2[i].cerrado) html+='<th>'+s+'</th>';
     });
-    // Stock final solo si todos los servicios están cerrados
-    var todosCerrados=dayData2.filter(function(d){ return d&&d.cerrado; }).length===numSvc;
-    if(todosCerrados) html+='<th>Stock final</th>';
+    if(todosCerrados) html+='<th>Final</th>';
     html+='</tr></thead><tbody>';
 
     PRODUCTS.forEach(function(p){
       if(p.type==='cafe') return;
+      var ini = stockInicial[p.name]||0;
+      var nuevo = nuevoStock[p.name]||0;
       html+='<tr><td>'+p.name+'</td>';
-      // Stock inicial
-      html+='<td class="num-blue">'+(stockInicial[p.name]||0)+'</td>';
-      // Cada servicio: entregados
+      html+='<td class="num-blue">'+ini+'</td>';
+      html+='<td class="'+(nuevo>0?'num-good':'num')+'">'+nuevo+'</td>';
       dayInfo.services.forEach(function(s,i){
         if(dayData2[i]&&dayData2[i].cerrado){
           var v=dayData2[i].entregados[p.name]||0;
           html+='<td class="'+(v>0?'num-good':'num')+'">'+v+'</td>';
         }
       });
-      // Stock final
       if(todosCerrados){
         var sf=state.stock[p.name]||0;
         html+='<td class="num" style="font-weight:600;">'+sf+'</td>';
@@ -444,7 +514,7 @@ function render(){
     // Fila especial para Café y Azúcar
     PRODUCTS.forEach(function(p){
       if(p.type!=='cafe') return;
-      html+='<tr><td>'+p.name+'</td><td class="num">—</td>';
+      html+='<tr><td>'+p.name+'</td><td class="num">—</td><td class="num">—</td>';
       dayInfo.services.forEach(function(s,i){
         if(dayData2[i]&&dayData2[i].cerrado){
           var v=dayData2[i].entregados[p.name]||'—';
