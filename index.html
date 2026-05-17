@@ -643,32 +643,26 @@ function enviarASheets(entregados,stockFinal,ingresos,novedades){
       };
     })
   };
-  // Envío via iframe oculto — evita CORS completamente
-  var url = APPS_SCRIPT_URL + '?data=' + encodeURIComponent(JSON.stringify(payload));
-  var iframe = document.getElementById('hidden-sender');
-  if(!iframe){
-    iframe = document.createElement('iframe');
-    iframe.id = 'hidden-sender';
-    iframe.name = 'hidden-sender';
-    iframe.style.display = 'none';
-    document.body.appendChild(iframe);
-  }
-  var form = document.createElement('form');
-  form.method = 'GET';
-  form.action = APPS_SCRIPT_URL;
-  form.target = 'hidden-sender';
-  var input = document.createElement('input');
-  input.type = 'hidden';
-  input.name = 'data';
-  input.value = JSON.stringify(payload);
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
-  document.body.removeChild(form);
-  setTimeout(function(){
-    setSyncStatus('ok','Guardado en Sheets ✓');
-    showToast('✓ Registro guardado en Google Sheets');
-  }, 2000);
+  // Envío via Cloudflare Worker — funciona en todos los dispositivos incluido iPhone
+  fetch('https://inventario-proxy.soyestivenval.workers.dev?action=save', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(data){
+    if(data.status === 'ok'){
+      setSyncStatus('ok','Guardado en Sheets ✓');
+      showToast('✓ Registro guardado en Google Sheets');
+    } else {
+      setSyncStatus('err','Error al guardar');
+      showToast('Error: ' + (data.message||'revisa la conexión'));
+    }
+  })
+  .catch(function(){
+    setSyncStatus('err','Sin conexión');
+    showToast('Sin conexión — datos guardados localmente');
+  });
 }
 
 function nuevaJornada(){
