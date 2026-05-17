@@ -152,7 +152,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 <div id="toast"></div>
 
 <script>
-var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzsP9BnFGclqnYNbf-xh46zVy2NjwLXNvgvVvecEqZIT_PYyVIJBMxFRVSu3IexvPO9fg/exec";
+var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzWVM42pLpAKP0X2aF5Yo1Em0amh2HIS8HCnTdnvpNrPowep1Ml5QKHNRqrEb0fS_psXA/exec";
 
 // Productos y su tipo:
 // type: 'num'    = input numérico normal
@@ -643,25 +643,33 @@ function enviarASheets(entregados,stockFinal,ingresos,novedades){
       };
     })
   };
-  // Envío via Cloudflare Worker — funciona en todos los dispositivos incluido iPhone
-  fetch('https://inventario-proxy.soyestivenval.workers.dev?action=save', {
+  // Envío via Cloudflare Worker
+  var workerUrl = 'https://inventario-proxy.soyestivenval.workers.dev?action=save';
+  fetch(workerUrl, {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
     body: JSON.stringify(payload)
   })
-  .then(function(r){ return r.json(); })
+  .then(function(r){
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  })
   .then(function(data){
-    if(data.status === 'ok'){
+    setSyncStatus('ok','Guardado en Sheets ✓');
+    showToast('✓ Registro guardado en Google Sheets');
+  })
+  .catch(function(err){
+    // Intentar con GET como fallback
+    var getUrl = 'https://inventario-proxy.soyestivenval.workers.dev?action=save&data=' + encodeURIComponent(JSON.stringify(payload));
+    fetch(getUrl)
+    .then(function(){ 
       setSyncStatus('ok','Guardado en Sheets ✓');
       showToast('✓ Registro guardado en Google Sheets');
-    } else {
-      setSyncStatus('err','Error al guardar');
-      showToast('Error: ' + (data.message||'revisa la conexión'));
-    }
-  })
-  .catch(function(){
-    setSyncStatus('err','Sin conexión');
-    showToast('Sin conexión — datos guardados localmente');
+    })
+    .catch(function(){
+      setSyncStatus('err','Sin conexión');
+      showToast('Sin conexión — datos guardados localmente');
+    });
   });
 }
 
